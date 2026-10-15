@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Prototipo Chat - Socket.io</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .header { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
+        #status { font-size: 14px; font-weight: bold; }
+        #chatBox { border: 1px solid #ccc; height: 250px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; background: #f9f9f9; }
+        #chatBox p { margin: 5px 0; word-break: break-word; }
+        input, button { padding: 8px; margin-right: 5px; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>Prototipo de Chat en Tiempo Real</h2>
+        <span id="status" style="color: gray;">🟡 Conectando...</span>
+    </div>
+    
+    <div id="chatBox"></div>
+
+    <input type="text" id="userInput" placeholder="Tu nombre..." style="width: 15%;">
+    <input type="text" id="messageInput" placeholder="Escribe un mensaje..." style="width: 40%;">
+    <button id="sendBtn" onclick="enviarMensaje()">Enviar</button>
+
+    <!-- Socket.io se carga automáticamente desde el servidor de Node -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const chatBox = document.getElementById('chatBox');
+        const userInput = document.getElementById('userInput');
+        const messageInput = document.getElementById('messageInput');
+        const statusSpan = document.getElementById('status');
+        const sendBtn = document.getElementById('sendBtn');
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function agregarMensaje(data) {
+            const p = document.createElement('p');
+            p.innerHTML = `<b>${escapeHtml(data.remitente)}:</b> ${escapeHtml(data.mensaje)}`;
+            chatBox.appendChild(p);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function enviarMensaje() {
+            const remitente = userInput.value.trim() || 'Anónimo';
+            const mensaje = messageInput.value.trim();
+
+            if (mensaje === '') return;
+
+            // Emitir evento al servidor
+            socket.emit('enviar_mensaje', { remitente, mensaje });
+
+            messageInput.value = '';
+            messageInput.focus();
+        }
+
+        // Enviar con la tecla Enter
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') enviarMensaje();
+        });
+
+        // Indicador de conexión con el servidor
+        socket.on('connect', () => {
+            statusSpan.textContent = '🟢 Conectado';
+            statusSpan.style.color = 'green';
+            sendBtn.disabled = false;
+        });
+
+        socket.on('disconnect', () => {
+            statusSpan.textContent = '🔴 Desconectado (esperando servidor...)';
+            statusSpan.style.color = 'red';
+            sendBtn.disabled = true;
+        });
+
+        // Cargar historial: limpia el chatBox para evitar mensajes duplicados al reconectar
+        socket.on('cargar_historial', (historial) => {
+            chatBox.innerHTML = '';
+            if (Array.isArray(historial)) {
+                historial.forEach(agregarMensaje);
+            }
+        });
+
+        // Escuchar cuando llega un mensaje nuevo en tiempo real
+        socket.on('recibir_mensaje', (data) => {
+            agregarMensaje(data);
+        });
+    </script>
+</body>
+</html>
