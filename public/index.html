@@ -2,96 +2,111 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo Chat - Socket.io</title>
+    <title>Chat Privado 1 a 1</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .header { display: flex; align-items: center; gap: 15px; margin-bottom: 10px; }
-        #status { font-size: 14px; font-weight: bold; }
-        #chatBox { border: 1px solid #ccc; height: 250px; overflow-y: scroll; padding: 10px; margin-bottom: 10px; background: #f9f9f9; }
-        #chatBox p { margin: 5px 0; word-break: break-word; }
-        input, button { padding: 8px; margin-right: 5px; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        body { font-family: Arial, sans-serif; margin: 30px; background: #f4f4f9; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
+        #chatBox { border: 1px solid #ccc; height: 280px; overflow-y: scroll; padding: 10px; margin-bottom: 15px; background: #fafafa; border-radius: 4px; }
+        input, button { padding: 8px; margin-right: 5px; margin-bottom: 10px; }
+        .msg-mio { text-align: right; color: #2b6cb0; margin: 5px 0; }
+        .msg-otro { text-align: left; color: #2d3748; margin: 5px 0; }
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h2>Prototipo de Chat en Tiempo Real</h2>
-        <span id="status" style="color: gray;">🟡 Conectando...</span>
+    <div class="card">
+        <h2>Chat Privado 1 a 1</h2>
+        
+        <div>
+            <label>Mi ID de Usuario:</label>
+            <input type="number" id="miUsuarioInput" value="1" style="width: 70px;">
+            <button onclick="conectarUsuario()">Conectar</button>
+        </div>
+
+        <div>
+            <label>Hablar con ID:</label>
+            <input type="number" id="receptorInput" value="2" style="width: 70px;">
+        </div>
+
+        <div id="chatBox"></div>
+
+        <input type="text" id="messageInput" placeholder="Escribe un mensaje..." style="width: 70%;">
+        <button onclick="enviarMensaje()">Enviar</button>
     </div>
-    
-    <div id="chatBox"></div>
 
-    <input type="text" id="userInput" placeholder="Tu nombre..." style="width: 15%;">
-    <input type="text" id="messageInput" placeholder="Escribe un mensaje..." style="width: 40%;">
-    <button id="sendBtn" onclick="enviarMensaje()">Enviar</button>
-
-    <!-- Socket.io se carga automáticamente desde el servidor de Node -->
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
+        let miUsuario = null;
 
         const chatBox = document.getElementById('chatBox');
-        const userInput = document.getElementById('userInput');
+        const miUsuarioInput = document.getElementById('miUsuarioInput');
+        const receptorInput = document.getElementById('receptorInput');
         const messageInput = document.getElementById('messageInput');
-        const statusSpan = document.getElementById('status');
-        const sendBtn = document.getElementById('sendBtn');
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        async function conectarUsuario() {
+            miUsuario = parseInt(miUsuarioInput.value);
+            if (!miUsuario) return alert('Ingresá un ID de usuario válido');
+            
+            socket.emit('registrar_usuario', miUsuario);
+            alert(`Conectado como Usuario ID: ${miUsuario}`);
+
+            await cargarHistorial();
         }
 
-        function agregarMensaje(data) {
-            const p = document.createElement('p');
-            p.innerHTML = `<b>${escapeHtml(data.remitente)}:</b> ${escapeHtml(data.mensaje)}`;
-            chatBox.appendChild(p);
-            chatBox.scrollTop = chatBox.scrollHeight;
+        async function cargarHistorial() {
+            const receptor = parseInt(receptorInput.value);
+            if (!miUsuario || !receptor) return;
+
+            try {
+                const response = await fetch(`/api/mensajes/${miUsuario}/${receptor}`);
+                const mensajes = await response.json();
+
+                chatBox.innerHTML = '';
+                mensajes.forEach(msg => pintarMensaje(msg));
+            } catch (err) {
+                console.error("Error al recuperar historial:", err);
+            }
         }
 
         function enviarMensaje() {
-            const remitente = userInput.value.trim() || 'Anónimo';
+            if (!miUsuario) return alert('Primero hacé click en Conectar.');
+            
+            const receptor = parseInt(receptorInput.value);
             const mensaje = messageInput.value.trim();
 
-            if (mensaje === '') return;
+            if (!receptor || mensaje === '') return alert('Faltan datos o el mensaje está vacío.');
 
-            // Emitir evento al servidor
-            socket.emit('enviar_mensaje', { remitente, mensaje });
+            socket.emit('enviar_mensaje_privado', {
+                remitente: miUsuario,
+                receptor: receptor,
+                mensaje: mensaje
+            });
 
             messageInput.value = '';
             messageInput.focus();
         }
 
-        // Enviar con la tecla Enter
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') enviarMensaje();
-        });
+        function pintarMensaje(data) {
+            const p = document.createElement('p');
+            const esMio = data.remitente === miUsuario;
+            p.className = esMio ? 'msg-mio' : 'msg-otro';
+            
+            const hora = new Date(data.creado_en).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            p.innerHTML = `<b>${esMio ? 'Tú' : 'Usuario ' + data.remitente}:</b> ${data.mensaje} <small style="color:gray; font-size:10px;">(${hora})</small>`;
+            chatBox.appendChild(p);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
 
-        // Indicador de conexión con el servidor
-        socket.on('connect', () => {
-            statusSpan.textContent = '🟢 Conectado';
-            statusSpan.style.color = 'green';
-            sendBtn.disabled = false;
-        });
+        receptorInput.addEventListener('change', cargarHistorial);
 
-        socket.on('disconnect', () => {
-            statusSpan.textContent = '🔴 Desconectado (esperando servidor...)';
-            statusSpan.style.color = 'red';
-            sendBtn.disabled = true;
-        });
-
-        // Cargar historial: limpia el chatBox para evitar mensajes duplicados al reconectar
-        socket.on('cargar_historial', (historial) => {
-            chatBox.innerHTML = '';
-            if (Array.isArray(historial)) {
-                historial.forEach(agregarMensaje);
+        socket.on('recibir_mensaje_privado', (data) => {
+            const receptorActual = parseInt(receptorInput.value);
+            
+            if ((data.remitente === miUsuario && data.receptor === receptorActual) || 
+                (data.remitente === receptorActual && data.receptor === miUsuario)) {
+                pintarMensaje(data);
             }
-        });
-
-        // Escuchar cuando llega un mensaje nuevo en tiempo real
-        socket.on('recibir_mensaje', (data) => {
-            agregarMensaje(data);
         });
     </script>
 </body>
